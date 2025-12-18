@@ -4,21 +4,21 @@ import statistics
 import matplotlib.pyplot as plt
 from utils import result_path
 from models import Samolot
-from event_engine import EventEngine
 import random
+import simpy
 
 
 class AirportEvent:
     def __init__(
         self,
-        engine: EventEngine,
+        env: simpy.Environment,
         arrival_interval: float,
         landing_duration: float,
         departure_interval: int,
         rng: Optional[random.Random] = None,
         streams=None,
     ) -> None:
-        self.engine = engine
+        self.env = env
         self.in_the_air = 0
         self.on_the_ground = 0
         self.arrival_interval = arrival_interval
@@ -43,12 +43,13 @@ class AirportEvent:
         # completed samolots for logging/analysis
         self.completed: list[Samolot] = []
 
-        # zaplanuj pierwszy przylot
-        self._zaplanuj_nastepny_przylot()
+        # start arrival generator process
+        self._stream_idx = 0
+        self.env.process(self._arrival_generator())
 
-    def _zaplanuj_nastepny_przylot(self) -> None:
+    def _zaplanuj_nastepny_przylot(self) -> float:
         if self.streams is not None:
-            idx = getattr(self, '_stream_idx', 0)
+            idx = self._stream_idx
             if idx >= len(self.streams.deltas):
                 delta = self.streams.deltas[-1]
             else:
@@ -57,8 +58,13 @@ class AirportEvent:
         else:
             raw = self.rng.expovariate(1.0 / max(0.0001, self.arrival_interval))
             delta = max(1, math.ceil(raw))
-        t = self.engine.now() + delta
-        self.engine.schedule(t, self._arrival)
+        return delta
+
+    def _arrival_generator(self) -> None:
+        while True:
+            delta = self._zaplanuj_nastepny_przylot()
+            yield self.env.timeout(delta)
+            self._arrival()
 
     def _losuj_kategorie(self) -> int:
         # when using prefed streams, categories are indexed by aircraft id
@@ -75,7 +81,7 @@ class AirportEvent:
         return max(1, math.ceil(val))
 
     def _collect_stats(self) -> None:
-        t = self.engine.now()
+        t = self.env.now
         count_air = len(self.kolejka_w_powietrzu) + (1 if self.aktualny_ladujacy else 0)
         count_ground = len(self.kolejka_na_plycie)
         self.hist_times.append(t)
@@ -88,41 +94,50 @@ class AirportEvent:
             kat = self.streams.category_for(self._next_id)
         else:
             kat = self._losuj_kategorie()
-        sam = Samolot(id=self._next_id, kategoria=kat, czas_przylotu=self.engine.now())
+        sam = Samolot(id=self._next_id, kategoria=kat, czas_przylotu=self.env.now)
         self.kolejka_w_powietrzu.append(sam)
         self.in_the_air += 1
         # rozpocznij ladowanie jesli mozna
         if self.aktualny_ladujacy is None and not self.kolejka_na_plycie:
             self._rozpocznij_ladowanie()
         self._collect_stats()
-        self._zaplanuj_nastepny_przylot()
+        # next arrival will be scheduled by the generator loop
 
     def _rozpocznij_ladowanie(self) -> None:
         if not self.kolejka_w_powietrzu:
             return
         sam = self.kolejka_w_powietrzu.pop(0)
-        sam.czas_rozpoczecia_ladowania = self.engine.now()
+        sam.czas_rozpoczecia_ladowania = self.env.now
         czas_l = self._losuj_czas_ladowania(sam.kategoria, sam.id)
         self.aktualny_ladujacy = sam
-        t_koniec = self.engine.now() + czas_l
-        self.engine.schedule(t_koniec, self._landing_complete, sam)
+        # schedule landing completion as a process
+        self.env.process(self._landing_complete_proc(sam, czas_l))
         self._collect_stats()
 
+    def _landing_complete_proc(self, sam: Samolot, delay: float):
+        yield self.env.timeout(delay)
+        self._landing_complete(sam)
+
     def _landing_complete(self, sam: Samolot) -> None:
-        sam.czas_zakonczenia_ladowania = self.engine.now()
+        sam.czas_zakonczenia_ladowania = self.env.now
         self.in_the_air = max(0, self.in_the_air - 1)
         self.on_the_ground += 1
-        sam.czas_odlotu_zaplanowany = self.engine.now() + self.departure_interval
+        sam.czas_odlotu_zaplanowany = self.env.now + self.departure_interval
         self.kolejka_na_plycie.append(sam)
         if sam.czas_rozpoczecia_ladowania is not None:
             self.czasy_oczekiwania_powietrze.append(sam.czas_rozpoczecia_ladowania - sam.czas_przylotu)
         self.aktualny_ladujacy = None
         # zaplanuj odlot dla tego samolotu
-        self.engine.schedule(sam.czas_odlotu_zaplanowany, self._departure, sam)
+        # schedule departure
+        self.env.process(self._departure_proc(sam, self.departure_interval))
         # jesli płyta jest wolna i sa samoloty w powietrzu — rozpocznij nastepne ladowanie
         if not self.kolejka_na_plycie and self.kolejka_w_powietrzu:
             self._rozpocznij_ladowanie()
         self._collect_stats()
+
+    def _departure_proc(self, sam: Samolot, delay: float):
+        yield self.env.timeout(delay)
+        self._departure(sam)
 
     def _departure(self, sam: Samolot) -> None:
         # usuń samolot z kolejki na płycie (jeśli nadal tam jest)
@@ -130,7 +145,7 @@ class AirportEvent:
             self.kolejka_na_plycie.remove(sam)
         except ValueError:
             return
-        sam.czas_odlotu = self.engine.now()
+        sam.czas_odlotu = self.env.now
         self.on_the_ground = max(0, self.on_the_ground - 1)
         if sam.czas_zakonczenia_ladowania is not None:
             self.czasy_oczekiwania_plyta.append(sam.czas_odlotu - sam.czas_zakonczenia_ladowania)
@@ -168,7 +183,7 @@ class AirportEvent:
 
 
 if __name__ == '__main__':
-    eng = EventEngine()
-    ap = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(0))
-    eng.run(until=100)
+    env = simpy.Environment()
+    ap = AirportEvent(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(0))
+    env.run(until=100)
     ap.podsumuj()

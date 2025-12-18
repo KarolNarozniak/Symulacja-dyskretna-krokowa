@@ -2,7 +2,6 @@ import csv
 import random
 import simpy
 from airport_step import AirportStep
-from event_engine import EventEngine
 from airport_event import AirportEvent
 from Airport2025 import Airport as AirportProcess
 from utils import result_path
@@ -27,10 +26,10 @@ def run_and_dump(seed=0, sim_time=100):
     step.run(sim_time)
     write_csv(result_path('log_step', 'csv'), step.completed)
 
-    # event
-    eng = EventEngine()
-    event = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0,2**31-1)), streams=streams)
-    eng.run(until=sim_time)
+    # event (SimPy)
+    env = simpy.Environment()
+    event = AirportEvent(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0,2**31-1)), streams=streams)
+    env.run(until=sim_time)
     write_csv(result_path('log_event', 'csv'), event.completed)
 
     # process

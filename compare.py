@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 from utils import result_path
 from airport_step import AirportStep
 from airport_event import AirportEvent
-from event_engine import EventEngine
 import simpy
 from Airport2025 import Airport as AirportProcess
 from pregen import generate_prefed
@@ -36,10 +35,10 @@ def run_all(sim_time=100, seed=0):
     step_air = step.hist_kolejki_powietrze
     step_ground = step.hist_kolejki_plyta
 
-    # Event engine
-    eng = EventEngine()
-    event = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(master.randint(0, 2**31-1)), streams=streams)
-    eng.run(until=sim_time)
+    # Event engine (SimPy)
+    env = simpy.Environment()
+    event = AirportEvent(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(master.randint(0, 2**31-1)), streams=streams)
+    env.run(until=sim_time)
     evt_air = resample_event_series(event.hist_times, event.hist_kolejki_powietrze, sim_time)
     evt_ground = resample_event_series(event.hist_times, event.hist_kolejki_plyta, sim_time)
 

@@ -6,8 +6,7 @@ To repozytorium zawiera implementację trzech wariantów prostego symulatora lot
 - `Airport_zad1.py` — prosty wrapper uruchamiający wersję procesową (`Airport2025.Airport`) z przykładowymi parametrami.
 - `Airport2025.py` — wersja procesowa (SimPy). Klasa `Airport` zarządza kolejkami, lądowaniami i odlotami; przyjmuje `rng: random.Random` dla deterministyczności.
 - `airport_step.py` — implementacja krokowa; w pętli czasowej (co jednostkę czasu) wywołuje `arrival`, `landing`, `departure` i zbiera statystyki.
-- `event_engine.py` — prosty silnik zdarzeń (priority queue) implementujący planowanie zdarzeń.
-- `airport_event.py` — model lotniska korzystający z `event_engine` (wersja zdarzeniowa).
+- `airport_event.py` — model lotniska korzystający z `simpy` (wersja zdarzeniowa).
 - `models.py` — `Samolot` dataclass z polami czasów (przylot, start lądowania, koniec lądowania, odlot).
 - `compare.py` — uruchamia krokową, zdarzeniową i procesową wersję z tymi samymi ziar-nami i generuje wykresy porównawcze (zapis w `results/`).
 - `test_replications.py` — uruchamia N replikacji (dla różnych ziaren) i wypisuje średnie/odchylenia czasów oczekiwania.
@@ -17,7 +16,7 @@ To repozytorium zawiera implementację trzech wariantów prostego symulatora lot
 
 ## Co zmieniłem względem pierwotnych plików
 - Ujednolicono użycie generatora losowego: wszystkie moduły przyjmują `random.Random` (argument `rng`) — ułatwia to odtwarzalność eksperymentów.
-- Dodano implementację zdarzeniową (`event_engine.py` + `airport_event.py`) oraz wersję krokową (`airport_step.py`).
+- Dodano implementację zdarzeniową (`airport_event.py`) oraz wersję krokową (`airport_step.py`).
 - Usunięto nadmiarowe debugujące `print`y i zmodyfikowano zapisy plików tak, by trafiały do `results/` z unikalnym sufiksem daty-czasu (funkcja w `utils.py`).
 - Dodano skrypty pomocnicze: `compare.py`, `test_replications.py`, `compare_logs.py` do porównań i zbierania wyników.
 

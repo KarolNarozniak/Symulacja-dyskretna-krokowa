@@ -3,9 +3,9 @@ from pregen import generate_prefed
 import random
 import simpy
 from airport_step import AirportStep
-from event_engine import EventEngine
 from airport_event import AirportEvent
 from Airport2025 import Airport as AirportProcess
+import simpy
 
 
 def normalize(x):
@@ -41,11 +41,11 @@ def run_and_compare(seed=0, sim_time=100):
     step.run(sim_time)
     step_map = {s.id: record_dict(s) for s in step.completed}
 
-    # event
-    eng = EventEngine()
-    event = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4,
+    # event (SimPy)
+    env = simpy.Environment()
+    event = AirportEvent(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4,
                          rng=random.Random(rng.randint(0, 2**31-1)), streams=streams)
-    eng.run(until=sim_time)
+    env.run(until=sim_time)
     event_map = {s.id: record_dict(s) for s in event.completed}
 
     # process
