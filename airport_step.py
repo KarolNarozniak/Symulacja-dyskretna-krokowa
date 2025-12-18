@@ -1,74 +1,55 @@
-import simpy
-from typing import Generator, Optional
-import random
 import math
 import statistics
-from dataclasses import dataclass
 import matplotlib.pyplot as plt
 from utils import result_path
+from typing import Optional
+import random
 from models import Samolot
 
-SIM_TIME: int = 100
-ARRIVAL_INTERVAL: float = 3.0
-LANDING_DURATION: float = 3.0
-DEPARTURE_INTERVAL: int = 4
 
-
-class Airport:
+class AirportStep:
     def __init__(
         self,
-        env: simpy.Environment,
         arrival_interval: float,
         landing_duration: float,
         departure_interval: int,
         rng: Optional[random.Random] = None,
     ) -> None:
-        self.env: simpy.Environment = env
-        self.in_the_air: int = 0
-        self.on_the_ground: int = 0
-        self.runway_free: bool = True
-        self.arrival_interval: float = arrival_interval
-        self.landing_duration: float = landing_duration
-        self.departure_interval: int = departure_interval
+        self.arrival_interval = arrival_interval
+        self.landing_duration = landing_duration
+        self.departure_interval = departure_interval
 
-        # Struktury obiektowe
         self.kolejka_w_powietrzu: list[Samolot] = []
         self.kolejka_na_plycie: list[Samolot] = []
         self.aktualny_ladujacy: Optional[Samolot] = None
         self.pas_zajety_do: int = -1
-        self._next_id: int = 0
 
-        # RNG (przekazywalne dla deterministyczności)
-        self.rng: random.Random = rng or random.Random()
+        self.in_the_air = 0
+        self.on_the_ground = 0
+        self._next_id = 0
+        self.rng = rng or random.Random()
 
-        # Statystyki
+        # statystyki
         self.hist_kolejki_powietrze: list[int] = []
         self.hist_kolejki_plyta: list[int] = []
         self.czasy_oczekiwania_powietrze: list[int] = []
         self.czasy_oczekiwania_plyta: list[int] = []
-
         # completed samolots for logging/analysis
         self.completed: list[Samolot] = []
 
-        # Planowanie pierwszego przylotu
-        self.arrival_time: int = 0
-        self._zaplanuj_nastepny_przylot()
+        # pierwsze przyloty
+        self.arrival_time = 0
+        self._zaplanuj_nastepny_przylot(0)
 
-        # Start procesu
-        self.action = env.process(self.run())
-
-    def _zaplanuj_nastepny_przylot(self) -> None:
-        """Losuje interwał wykładniczy i ustawia arrival_time."""
+    def _zaplanuj_nastepny_przylot(self, now: int) -> None:
         raw = self.rng.expovariate(1.0 / max(0.0001, self.arrival_interval))
         delta = max(1, math.ceil(raw))
-        self.arrival_time = self.env.now + delta
+        self.arrival_time = now + delta
 
     def _losuj_kategorie(self) -> int:
-        """Losuje kategorię: 1, 2 lub 3 równomiernie."""
         return self.rng.choice([1, 2, 3])
 
     def _losuj_czas_ladowania(self, kategoria: int) -> int:
-        """Czas lądowania: 1 stała, 2 randint(2,5), 3 normal ucięty w 1."""
         if kategoria == 1:
             return max(1, int(self.landing_duration))
         if kategoria == 2:
@@ -76,99 +57,73 @@ class Airport:
         val = self.rng.gauss(self.landing_duration, 1.5)
         return max(1, math.ceil(val))
 
-    def _rozpocznij_ladowanie(self) -> None:
-        """Rozpoczyna lądowanie pierwszego z kolejki w powietrzu (FIFO)."""
-        # Nie zaczynamy lądowania jeśli nie ma samolotów w powietrzu
-        # lub jeśli na płycie już jest samolot (tylko 1 samolot na płycie jednocześnie)
+    def _rozpocznij_ladowanie(self, now: int) -> None:
         if not self.kolejka_w_powietrzu:
             return
         if self.kolejka_na_plycie:
-            # płyta zajęta — nie można rozpocząć nowego lądowania
             return
         sam = self.kolejka_w_powietrzu.pop(0)
-        sam.czas_rozpoczecia_ladowania = self.env.now
+        sam.czas_rozpoczecia_ladowania = now
         czas_l = self._losuj_czas_ladowania(sam.kategoria)
         self.aktualny_ladujacy = sam
-        self.pas_zajety_do = self.env.now + czas_l
-        self.runway_free = False
+        self.pas_zajety_do = now + czas_l
 
-    def arrival(self) -> None:
-        """Tworzy Samolot przy przylocie i wstawia do kolejki w powietrzu."""
-        if self.env.now == self.arrival_time:
+    def arrival(self, now: int) -> None:
+        if now == self.arrival_time:
             self._next_id += 1
             kat = self._losuj_kategorie()
-            sam = Samolot(id=self._next_id, kategoria=kat, czas_przylotu=self.env.now)
+            sam = Samolot(id=self._next_id, kategoria=kat, czas_przylotu=now)
             self.kolejka_w_powietrzu.append(sam)
             self.in_the_air += 1
+            if self.aktualny_ladujacy is None and not self.kolejka_na_plycie:
+                self._rozpocznij_ladowanie(now)
+            self._zaplanuj_nastepny_przylot(now)
 
-            if self.runway_free and self.kolejka_w_powietrzu:
-                self._rozpocznij_ladowanie()
-
-            self._zaplanuj_nastepny_przylot()
-
-    def landing(self) -> None:
-        """Obsługa zakończenia lądowania: przenosi na płytę, planuje odlot."""
-        if self.aktualny_ladujacy is not None and self.env.now == self.pas_zajety_do:
+    def landing(self, now: int) -> None:
+        if self.aktualny_ladujacy is not None and now == self.pas_zajety_do:
             sam = self.aktualny_ladujacy
-            sam.czas_zakonczenia_ladowania = self.env.now
+            sam.czas_zakonczenia_ladowania = now
             self.in_the_air = max(0, self.in_the_air - 1)
             self.on_the_ground += 1
-            sam.czas_odlotu_zaplanowany = self.env.now + self.departure_interval
+            sam.czas_odlotu_zaplanowany = now + self.departure_interval
             self.kolejka_na_plycie.append(sam)
-
             if sam.czas_rozpoczecia_ladowania is not None:
                 self.czasy_oczekiwania_powietrze.append(sam.czas_rozpoczecia_ladowania - sam.czas_przylotu)
-
             self.aktualny_ladujacy = None
             self.pas_zajety_do = -1
-
             if self.kolejka_w_powietrzu:
-                self._rozpocznij_ladowanie()
-            else:
-                self.runway_free = True
+                self._rozpocznij_ladowanie(now)
 
-    def departure(self) -> None:
-        """Obsługa odlotów: usuwa z płyty (FIFO), zapisuje czas oczekiwania."""
-        if self.kolejka_na_plycie and self.kolejka_na_plycie[0].czas_odlotu_zaplanowany == self.env.now:
+    def departure(self, now: int) -> None:
+        if self.kolejka_na_plycie and self.kolejka_na_plycie[0].czas_odlotu_zaplanowany == now:
             sam = self.kolejka_na_plycie.pop(0)
-            sam.czas_odlotu = self.env.now
+            sam.czas_odlotu = now
             self.on_the_ground = max(0, self.on_the_ground - 1)
             if sam.czas_zakonczenia_ladowania is not None:
                 self.czasy_oczekiwania_plyta.append(sam.czas_odlotu - sam.czas_zakonczenia_ladowania)
-
             # record completed
             self.completed.append(sam)
-
-            # Po odlocie — jesli teraz płyta jest wolna i mamy samoloty w powietrzu,
-            # mozemy rozpocząć kolejne lądowanie.
             if not self.kolejka_na_plycie and self.kolejka_w_powietrzu and self.aktualny_ladujacy is None:
-                self._rozpocznij_ladowanie()
+                self._rozpocznij_ladowanie(now)
 
     def _collect_stats(self) -> None:
-        """
-        Zbiera liczebności kolejek.
-        Dopisuje do historii aktualną liczbę samolotów „w powietrzu” powiększoną o 1, 
-        jeśli istnieje samolot aktualnie lądujący
-        """
         count = len(self.kolejka_w_powietrzu)
         if self.aktualny_ladujacy:
             count += 1
         self.hist_kolejki_powietrze.append(count)
         self.hist_kolejki_plyta.append(len(self.kolejka_na_plycie))
 
-    def run(self) -> Generator:
-        while True:
-            self.arrival()
-            self.landing()
-            self.departure()
+    def run(self, until: int) -> None:
+        for t in range(until + 1):
+            self.arrival(t)
+            self.landing(t)
+            self.departure(t)
             self._collect_stats()
-            yield self.env.timeout(1)
 
     def podsumuj(self) -> None:
-        """Liczy statystyki i rysuje wykresy."""
         avg_pow = statistics.mean(self.czasy_oczekiwania_powietrze) if self.czasy_oczekiwania_powietrze else 0
         avg_plyta = statistics.mean(self.czasy_oczekiwania_plyta) if self.czasy_oczekiwania_plyta else 0
-        print("\n--- Podsumowanie ---")
+        print("\n--- Podsumowanie (krok) ---")
         print(f"Liczba wyladowanych: {len(self.czasy_oczekiwania_powietrze)}")
         print(f"Sredni czas w powietrzu: {avg_pow:.2f}")
         print(f"Sredni czas na plycie: {avg_plyta:.2f}")
@@ -181,7 +136,7 @@ class Airport:
         plt.ylabel("Liczba")
         plt.legend()
         plt.tight_layout()
-        plt.savefig(result_path("kolejki_w_czasie", "png"))
+        plt.savefig(result_path("kolejki_krok", "png"))
 
         plt.figure(figsize=(10, 5))
         if self.czasy_oczekiwania_powietrze:
@@ -192,11 +147,10 @@ class Airport:
         plt.ylabel("Liczba")
         plt.legend()
         plt.tight_layout()
-        plt.savefig(result_path("hist_czasy_oczekiwania", "png"))
+        plt.savefig(result_path("hist_czasy_oczekiwania_krok", "png"))
 
 
-if __name__ == "__main__":
-    env = simpy.Environment()
-    airport = Airport(env, ARRIVAL_INTERVAL, LANDING_DURATION, DEPARTURE_INTERVAL, rng=random.Random(0))
-    env.run(until=SIM_TIME)
-    airport.podsumuj()
+if __name__ == '__main__':
+    ap = AirportStep(arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(0))
+    ap.run(100)
+    ap.podsumuj()
