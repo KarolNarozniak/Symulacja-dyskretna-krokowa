@@ -6,6 +6,7 @@ from airport_event import AirportEvent
 from event_engine import EventEngine
 import simpy
 from Airport2025 import Airport as AirportProcess
+from pregen import generate_prefed
 
 
 def resample_event_series(times, values, until):
@@ -28,21 +29,23 @@ def run_all(sim_time=100, seed=0):
     seeds = [master.randint(0, 2**31 - 1) for _ in range(3)]
 
     # Step engine
-    step = AirportStep(arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(seeds[0]))
+    # generate a shared prefed stream
+    streams = generate_prefed(seed, sim_time, arrival_interval=3.0, landing_duration=3.0)
+    step = AirportStep(arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(master.randint(0, 2**31-1)), streams=streams)
     step.run(sim_time)
     step_air = step.hist_kolejki_powietrze
     step_ground = step.hist_kolejki_plyta
 
     # Event engine
     eng = EventEngine()
-    event = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(seeds[1]))
+    event = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(master.randint(0, 2**31-1)), streams=streams)
     eng.run(until=sim_time)
     evt_air = resample_event_series(event.hist_times, event.hist_kolejki_powietrze, sim_time)
     evt_ground = resample_event_series(event.hist_times, event.hist_kolejki_plyta, sim_time)
 
     # Process (simpy) engine
     env = simpy.Environment()
-    proc = AirportProcess(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(seeds[2]))
+    proc = AirportProcess(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(master.randint(0, 2**31-1)), streams=streams)
     env.run(until=sim_time)
     proc_air = proc.hist_kolejki_powietrze
     proc_ground = proc.hist_kolejki_plyta

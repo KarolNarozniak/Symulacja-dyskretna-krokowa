@@ -22,6 +22,7 @@ class Airport:
         landing_duration: float,
         departure_interval: int,
         rng: Optional[random.Random] = None,
+        streams=None,
     ) -> None:
         self.env: simpy.Environment = env
         self.in_the_air: int = 0
@@ -40,6 +41,7 @@ class Airport:
 
         # RNG (przekazywalne dla deterministyczności)
         self.rng: random.Random = rng or random.Random()
+        self.streams = streams
 
         # Statystyki
         self.hist_kolejki_powietrze: list[int] = []
@@ -59,16 +61,28 @@ class Airport:
 
     def _zaplanuj_nastepny_przylot(self) -> None:
         """Losuje interwał wykładniczy i ustawia arrival_time."""
-        raw = self.rng.expovariate(1.0 / max(0.0001, self.arrival_interval))
-        delta = max(1, math.ceil(raw))
+        if self.streams is not None:
+            idx = getattr(self, '_stream_idx', 0)
+            if idx >= len(self.streams.deltas):
+                delta = self.streams.deltas[-1]
+            else:
+                delta = self.streams.deltas[idx]
+            self._stream_idx = idx + 1
+        else:
+            raw = self.rng.expovariate(1.0 / max(0.0001, self.arrival_interval))
+            delta = max(1, math.ceil(raw))
         self.arrival_time = self.env.now + delta
 
-    def _losuj_kategorie(self) -> int:
-        """Losuje kategorię: 1, 2 lub 3 równomiernie."""
+    def _losuj_kategorie(self, sam_id: Optional[int] = None) -> int:
+        """Losuje kategorię: 1, 2 lub 3 równomiernie. If streams provided, return pre-generated category for sam_id."""
+        if self.streams is not None and sam_id is not None:
+            return self.streams.category_for(sam_id)
         return self.rng.choice([1, 2, 3])
 
-    def _losuj_czas_ladowania(self, kategoria: int) -> int:
-        """Czas lądowania: 1 stała, 2 randint(2,5), 3 normal ucięty w 1."""
+    def _losuj_czas_ladowania(self, kategoria: int, sam_id: Optional[int] = None) -> int:
+        """Czas lądowania: 1 stała, 2 randint(2,5), 3 normal ucięty w 1. If streams provided and sam_id set, return pre-generated."""
+        if self.streams is not None and sam_id is not None:
+            return self.streams.landing_for(sam_id)
         if kategoria == 1:
             return max(1, int(self.landing_duration))
         if kategoria == 2:
@@ -87,7 +101,7 @@ class Airport:
             return
         sam = self.kolejka_w_powietrzu.pop(0)
         sam.czas_rozpoczecia_ladowania = self.env.now
-        czas_l = self._losuj_czas_ladowania(sam.kategoria)
+        czas_l = self._losuj_czas_ladowania(sam.kategoria, sam.id)
         self.aktualny_ladujacy = sam
         self.pas_zajety_do = self.env.now + czas_l
         self.runway_free = False

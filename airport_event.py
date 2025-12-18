@@ -16,6 +16,7 @@ class AirportEvent:
         landing_duration: float,
         departure_interval: int,
         rng: Optional[random.Random] = None,
+        streams=None,
     ) -> None:
         self.engine = engine
         self.in_the_air = 0
@@ -30,6 +31,7 @@ class AirportEvent:
 
         self._next_id = 0
         self.rng = rng or random.Random()
+        self.streams = streams
 
         # statystyki (zapis przy zmianie stanu)
         self.hist_times: list[float] = []
@@ -45,15 +47,26 @@ class AirportEvent:
         self._zaplanuj_nastepny_przylot()
 
     def _zaplanuj_nastepny_przylot(self) -> None:
-        raw = self.rng.expovariate(1.0 / max(0.0001, self.arrival_interval))
-        delta = max(1, math.ceil(raw))
+        if self.streams is not None:
+            idx = getattr(self, '_stream_idx', 0)
+            if idx >= len(self.streams.deltas):
+                delta = self.streams.deltas[-1]
+            else:
+                delta = self.streams.deltas[idx]
+            self._stream_idx = idx + 1
+        else:
+            raw = self.rng.expovariate(1.0 / max(0.0001, self.arrival_interval))
+            delta = max(1, math.ceil(raw))
         t = self.engine.now() + delta
         self.engine.schedule(t, self._arrival)
 
     def _losuj_kategorie(self) -> int:
+        # when using prefed streams, categories are indexed by aircraft id
         return self.rng.choice([1, 2, 3])
 
-    def _losuj_czas_ladowania(self, kategoria: int) -> int:
+    def _losuj_czas_ladowania(self, kategoria: int, sam_id: int | None = None) -> int:
+        if self.streams is not None and sam_id is not None:
+            return self.streams.landing_for(sam_id)
         if kategoria == 1:
             return max(1, int(self.landing_duration))
         if kategoria == 2:
@@ -71,7 +84,10 @@ class AirportEvent:
 
     def _arrival(self) -> None:
         self._next_id += 1
-        kat = self._losuj_kategorie()
+        if self.streams is not None:
+            kat = self.streams.category_for(self._next_id)
+        else:
+            kat = self._losuj_kategorie()
         sam = Samolot(id=self._next_id, kategoria=kat, czas_przylotu=self.engine.now())
         self.kolejka_w_powietrzu.append(sam)
         self.in_the_air += 1
@@ -86,7 +102,7 @@ class AirportEvent:
             return
         sam = self.kolejka_w_powietrzu.pop(0)
         sam.czas_rozpoczecia_ladowania = self.engine.now()
-        czas_l = self._losuj_czas_ladowania(sam.kategoria)
+        czas_l = self._losuj_czas_ladowania(sam.kategoria, sam.id)
         self.aktualny_ladujacy = sam
         t_koniec = self.engine.now() + czas_l
         self.engine.schedule(t_koniec, self._landing_complete, sam)

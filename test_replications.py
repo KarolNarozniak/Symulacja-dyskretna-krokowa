@@ -5,24 +5,30 @@ from airport_event import AirportEvent
 from event_engine import EventEngine
 import simpy
 from Airport2025 import Airport as AirportProcess
+from pregen import generate_prefed
 
 
 def run_once(seed, sim_time=100):
     rng = random.Random(seed)
+    # generate shared prefed streams so all three sims use identical arrivals/categories/landing times
+    streams = generate_prefed(seed, sim_time, arrival_interval=3.0, landing_duration=3.0)
 
-    step = AirportStep(arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0, 2**31-1)))
+    step = AirportStep(arrival_interval=3.0, landing_duration=3.0, departure_interval=4,
+                       rng=random.Random(rng.randint(0, 2**31-1)), streams=streams)
     step.run(sim_time)
     step_vals = (statistics.mean(step.czasy_oczekiwania_powietrze) if step.czasy_oczekiwania_powietrze else 0,
                  statistics.mean(step.czasy_oczekiwania_plyta) if step.czasy_oczekiwania_plyta else 0)
 
     eng = EventEngine()
-    event = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0, 2**31-1)))
+    event = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4,
+                         rng=random.Random(rng.randint(0, 2**31-1)), streams=streams)
     eng.run(until=sim_time)
     event_vals = (statistics.mean(event.czasy_oczekiwania_powietrze) if event.czasy_oczekiwania_powietrze else 0,
                   statistics.mean(event.czasy_oczekiwania_plyta) if event.czasy_oczekiwania_plyta else 0)
 
     env = simpy.Environment()
-    proc = AirportProcess(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0, 2**31-1)))
+    proc = AirportProcess(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4,
+                         rng=random.Random(rng.randint(0, 2**31-1)), streams=streams)
     env.run(until=sim_time)
     proc_vals = (statistics.mean(proc.czasy_oczekiwania_powietrze) if proc.czasy_oczekiwania_powietrze else 0,
                  statistics.mean(proc.czasy_oczekiwania_plyta) if proc.czasy_oczekiwania_plyta else 0)

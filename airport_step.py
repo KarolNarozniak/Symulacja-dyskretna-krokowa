@@ -14,6 +14,7 @@ class AirportStep:
         landing_duration: float,
         departure_interval: int,
         rng: Optional[random.Random] = None,
+        streams=None,
     ) -> None:
         self.arrival_interval = arrival_interval
         self.landing_duration = landing_duration
@@ -28,6 +29,7 @@ class AirportStep:
         self.on_the_ground = 0
         self._next_id = 0
         self.rng = rng or random.Random()
+        self.streams = streams
 
         # statystyki
         self.hist_kolejki_powietrze: list[int] = []
@@ -42,14 +44,26 @@ class AirportStep:
         self._zaplanuj_nastepny_przylot(0)
 
     def _zaplanuj_nastepny_przylot(self, now: int) -> None:
-        raw = self.rng.expovariate(1.0 / max(0.0001, self.arrival_interval))
-        delta = max(1, math.ceil(raw))
+        if self.streams is not None:
+            idx = getattr(self, '_stream_idx', 0)
+            if idx >= len(self.streams.deltas):
+                delta = self.streams.deltas[-1]
+            else:
+                delta = self.streams.deltas[idx]
+            self._stream_idx = idx + 1
+        else:
+            raw = self.rng.expovariate(1.0 / max(0.0001, self.arrival_interval))
+            delta = max(1, math.ceil(raw))
         self.arrival_time = now + delta
 
-    def _losuj_kategorie(self) -> int:
+    def _losuj_kategorie(self, sam_id: Optional[int] = None) -> int:
+        if self.streams is not None and sam_id is not None:
+            return self.streams.category_for(sam_id)
         return self.rng.choice([1, 2, 3])
 
-    def _losuj_czas_ladowania(self, kategoria: int) -> int:
+    def _losuj_czas_ladowania(self, kategoria: int, sam_id: Optional[int] = None) -> int:
+        if self.streams is not None and sam_id is not None:
+            return self.streams.landing_for(sam_id)
         if kategoria == 1:
             return max(1, int(self.landing_duration))
         if kategoria == 2:
@@ -64,14 +78,14 @@ class AirportStep:
             return
         sam = self.kolejka_w_powietrzu.pop(0)
         sam.czas_rozpoczecia_ladowania = now
-        czas_l = self._losuj_czas_ladowania(sam.kategoria)
+        czas_l = self._losuj_czas_ladowania(sam.kategoria, sam.id)
         self.aktualny_ladujacy = sam
         self.pas_zajety_do = now + czas_l
 
     def arrival(self, now: int) -> None:
         if now == self.arrival_time:
             self._next_id += 1
-            kat = self._losuj_kategorie()
+            kat = self._losuj_kategorie(self._next_id)
             sam = Samolot(id=self._next_id, kategoria=kat, czas_przylotu=now)
             self.kolejka_w_powietrzu.append(sam)
             self.in_the_air += 1

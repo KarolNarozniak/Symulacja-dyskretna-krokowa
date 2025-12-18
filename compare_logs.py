@@ -6,6 +6,7 @@ from event_engine import EventEngine
 from airport_event import AirportEvent
 from Airport2025 import Airport as AirportProcess
 from utils import result_path
+from pregen import generate_prefed
 
 
 def write_csv(filename, records):
@@ -18,21 +19,23 @@ def write_csv(filename, records):
 
 def run_and_dump(seed=0, sim_time=100):
     rng = random.Random(seed)
+    # generate shared prefed streams so all three implementations get identical input sequences
+    streams = generate_prefed(seed, sim_time, arrival_interval=3.0, landing_duration=3.0)
 
     # step
-    step = AirportStep(arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0,2**31-1)))
+    step = AirportStep(arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0,2**31-1)), streams=streams)
     step.run(sim_time)
     write_csv(result_path('log_step', 'csv'), step.completed)
 
     # event
     eng = EventEngine()
-    event = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0,2**31-1)))
+    event = AirportEvent(eng, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0,2**31-1)), streams=streams)
     eng.run(until=sim_time)
     write_csv(result_path('log_event', 'csv'), event.completed)
 
     # process
     env = simpy.Environment()
-    proc = AirportProcess(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0,2**31-1)))
+    proc = AirportProcess(env, arrival_interval=3.0, landing_duration=3.0, departure_interval=4, rng=random.Random(rng.randint(0,2**31-1)), streams=streams)
     env.run(until=sim_time)
     write_csv(result_path('log_process', 'csv'), proc.completed)
 
