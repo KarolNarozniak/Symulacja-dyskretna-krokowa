@@ -3,12 +3,21 @@ from typing import Optional
 
 
 @dataclass
-class Samolot:
-    """Reprezentacja samolotu. Pola zgodne z oryginalnym zadaniem."""
+class Plane:
+    """Plane tracked through landing and post-landing handling."""
     id: int
-    kategoria: int
-    czas_przylotu: int
-    czas_rozpoczecia_ladowania: Optional[int] = None
-    czas_zakonczenia_ladowania: Optional[int] = None
-    czas_odlotu_zaplanowany: Optional[int] = None
-    czas_odlotu: Optional[int] = None
+    category: int
+    arrival_time: float
+    landing_start: Optional[float] = None
+    landing_end: Optional[float] = None
+    unload_end: Optional[float] = None
+    departure_time: Optional[float] = None
+
+
+@dataclass
+class Passenger:
+    """Passenger waiting for and completing service at the gate."""
+    id: int
+    arrival_time: float
+    service_start: Optional[float] = None
+    service_end: Optional[float] = None
