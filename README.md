@@ -15,7 +15,7 @@ Wyniki (obrazy) oraz pliki CSV zapisywane są do katalogu wynikowego generowaneg
 - Czas do awarii: rozkład wykładniczy; czas naprawy: rozkład normalny (ucięty do 0).
 - Zbierane metryki: średni czas obsługi (z awariami), długość kolejki (w czasie i średnia), przebiegi stanów bramki, skanera i drzwi.
 
-## Odpowiedzi na pytania prowadzącego (15)
+## FAQ
 
 ### 1️⃣ Gdzie w tym programie jest zaimplementowana symulacja zdarzeniowa?
 Symulacja jest zdarzeniowa, bo **czas w modelu przesuwa się tylko w momentach zdarzeń** sterowanych przez SimPy:
@@ -24,7 +24,7 @@ Symulacja jest zdarzeniowa, bo **czas w modelu przesuwa się tylko w momentach z
 Nie ma żadnej pętli typu „for t in range(sim_time)” ani ręcznego kroku czasowego — wszystko dzieje się jako sekwencja zdarzeń i timeoutów.
 
 ### 2️⃣ Jakie są główne zdarzenia w symulacji i gdzie są generowane?
-Główne zdarzenia (w sensie modelu) i miejsca w kodzie:
+Główne zdarzenia i miejsca w kodzie:
 - **Przylot samolotu**: `AirportLab7._arrival()` (wywoływane z procesu `AirportLab7._arrival_generator()`).
 - **Start lądowania / koniec lądowania**: `AirportLab7._start_landing()` oraz `AirportLab7._landing_complete_proc()` → `AirportLab7._landing_complete()`.
 - **Odprawa + rozładunek**: `AirportLab7._post_landing_proc()` (dwa `yield env.timeout(...)`).
