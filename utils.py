@@ -1,14 +1,26 @@
-import os
+from __future__ import annotations
+
 from datetime import datetime
+from pathlib import Path
+import os
 
 
-def ensure_results_dir(path: str = "results") -> str:
-    os.makedirs(path, exist_ok=True)
-    return path
+def _base_output_dir() -> Path:
+    # A writable per-user location on Windows
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        return Path(local) / "airport_lab7_outputs"
+    # fallback
+    return Path.home() / "airport_lab7_outputs"
+
+
+def ensure_results_dir(folder: str = "results") -> Path:
+    p = (_base_output_dir() / folder).resolve()
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def result_path(base: str, ext: str = "png", folder: str = "results") -> str:
-    """Return a results path with timestamp: results/{base}_{YYYYmmdd_HHMMSS}.{ext}"""
-    ensure_results_dir(folder)
+    out_dir = ensure_results_dir(folder)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return os.path.join(folder, f"{base}_{ts}.{ext}")
+    return str((out_dir / f"{base}_{ts}.{ext}").resolve())
